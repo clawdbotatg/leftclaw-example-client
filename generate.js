@@ -1,16 +1,22 @@
 import "dotenv/config";
 import { writeFileSync } from "fs";
+import { execSync } from "child_process";
 import { createWalletClient, createPublicClient, http } from "viem";
 import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
 import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
 
+const PROMPT = process.argv[2];
+if (!PROMPT) {
+  console.error('Usage: node generate "<image description>"');
+  process.exit(1);
+}
+
 if (!process.env.PRIVATE_KEY) {
   throw new Error("PRIVATE_KEY not set in .env");
 }
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
-const PROMPT = "counting money, surrounded by stacks of cash and gold coins, fanning out hundred dollar bills with a smug grin, money raining down";
 const RPC = "https://mainnet.base.org";
 const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
@@ -51,7 +57,8 @@ async function main() {
     schemes: [{ network: "eip155:8453", client: new ExactEvmScheme(signer) }],
   });
 
-  console.log("Generating CLAWD PFP (counting money)...");
+  console.log("Generating CLAWD PFP...");
+  console.log(`Prompt: ${PROMPT}\n`);
   const response = await fetchWithPayment("https://leftclaw.services/api/pfp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -66,9 +73,10 @@ async function main() {
   const { image, message } = await response.json();
   console.log(message);
 
-  const filename = `clawd-money-${Date.now()}.png`;
+  const filename = `clawd-pfp-${Date.now()}.png`;
   writeFileSync(filename, Buffer.from(image.replace("data:image/png;base64,", ""), "base64"));
   console.log(`Saved → ${filename}`);
+  execSync(`open "${filename}"`);
 }
 
 main().catch(console.error);
