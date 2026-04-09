@@ -1,82 +1,37 @@
-import "dotenv/config";
 import { writeFileSync } from "fs";
 import { execSync } from "child_process";
-import { createWalletClient, createPublicClient, http } from "viem";
-import { base } from "viem/chains";
-import { privateKeyToAccount } from "viem/accounts";
-import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
-import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
+import { setupWallet, logBalance, getX402Fetch, parsePayMethod, parseCvAmount, positionalArgs, postJobDirect } from "./lib.js";
 
-const PROMPT = process.argv[2];
+const allArgs = process.argv.slice(2);
+const args = positionalArgs(allArgs);
+const PROMPT = args[0];
 if (!PROMPT) {
-  console.error('Usage: node generate "<image description>"');
+  console.error('Usage: node generate "<image description>" [--pay=x402|usdc|eth|clawd|cv] [--cv-amount=<n>]');
+  console.error('Note: --pay=x402 (default) returns the image immediately. Other methods post a job on-chain.');
   process.exit(1);
 }
 
-if (!process.env.PRIVATE_KEY) {
-  throw new Error("PRIVATE_KEY not set in .env");
-}
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
-const RPC = "https://mainnet.base.org";
-const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const payMethod = parsePayMethod(allArgs);
+const cvAmount = parseCvAmount(allArgs);
+const { account, publicClient, walletClient } = setupWallet();
+await logBalance(publicClient, account.address);
+console.log("\nGenerating CLAWD PFP...");
+console.log(`Prompt: ${PROMPT}\n`);
 
-async function main() {
-  const account = privateKeyToAccount(PRIVATE_KEY);
-  console.log("Wallet:", account.address);
-
-  const publicClient = createPublicClient({ chain: base, transport: http(RPC) });
-  const walletClient = createWalletClient({
-    account,
-    chain: base,
-    transport: http(RPC),
-  });
-
-  const balance = await publicClient.readContract({
-    address: USDC,
-    abi: [
-      {
-        name: "balanceOf",
-        type: "function",
-        stateMutability: "view",
-        inputs: [{ name: "account", type: "address" }],
-        outputs: [{ name: "", type: "uint256" }],
-      },
-    ],
-    functionName: "balanceOf",
-    args: [account.address],
-  });
-  console.log(`USDC balance: $${(Number(balance) / 1_000_000).toFixed(2)}`);
-  if (Number(balance) < 250_000) {
-    throw new Error("Need at least $0.25 USDC on Base — fund " + account.address);
-  }
-
-  const rawSigner = toClientEvmSigner(walletClient, publicClient);
-  const signer = { ...rawSigner, address: account.address };
-
-  const fetchWithPayment = wrapFetchWithPaymentFromConfig(fetch, {
-    schemes: [{ network: "eip155:8453", client: new ExactEvmScheme(signer) }],
-  });
-
-  console.log("Generating CLAWD PFP...");
-  console.log(`Prompt: ${PROMPT}\n`);
+if (payMethod === "x402") {
+  const fetchWithPayment = getX402Fetch(walletClient, publicClient, account);
   const response = await fetchWithPayment("https://leftclaw.services/api/pfp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt: PROMPT }),
   });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Failed ${response.status}: ${err}`);
-  }
-
+  if (!response.ok) throw new Error(`Failed ${response.status}: ${await response.text()}`);
   const { image, message } = await response.json();
   console.log(message);
-
   const filename = `clawd-pfp-${Date.now()}.png`;
   writeFileSync(filename, Buffer.from(image.replace("data:image/png;base64,", ""), "base64"));
   console.log(`Saved → ${filename}`);
   execSync(`open "${filename}"`);
+} else {
+  await postJobDirect(walletClient, publicClient, account, payMethod, "pfp", PROMPT, { cvAmount });
 }
-
-main().catch(console.error);

@@ -2,10 +2,11 @@ import { setupWallet, logBalance, getX402Fetch, parsePayMethod, parseCvAmount, p
 
 const allArgs = process.argv.slice(2);
 const args = positionalArgs(allArgs);
-const DESCRIPTION = args[0];
-if (!DESCRIPTION) {
-  console.error('Usage: node build "<what to build>" [--pay=x402|usdc|eth|clawd|cv] [--cv-amount=<n>]');
-  console.error('  e.g. node build "Simple ERC20 token with mint/burn, deploy to Base"');
+const CONDITION = args[0];
+if (!CONDITION) {
+  console.error('Usage: node judge "<condition or oracle task>" [--pay=x402|usdc|eth|clawd|cv] [--cv-amount=<n>]');
+  console.error('  e.g. node judge "Watch 0x123...456 on Base — trigger if ETH balance drops below 1 ETH"');
+  console.error('  e.g. node judge "Judge this prediction market: will ETH be above $3k on 2026-06-01?"');
   process.exit(1);
 }
 
@@ -14,20 +15,20 @@ const cvAmount = parseCvAmount(allArgs);
 
 const { account, publicClient, walletClient } = setupWallet();
 await logBalance(publicClient, account.address);
-console.log("\nSubmitting build request...");
-console.log(`Description: ${DESCRIPTION}\n`);
+console.log("\nSubmitting judge/oracle request...");
+console.log(`Condition: ${CONDITION}\n`);
 
 if (payMethod === "x402") {
   const fetchWithPayment = getX402Fetch(walletClient, publicClient, account);
-  const response = await fetchWithPayment("https://leftclaw.services/api/build", {
+  const response = await fetchWithPayment("https://leftclaw.services/api/judge", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ description: DESCRIPTION }),
+    body: JSON.stringify({ description: CONDITION }),
   });
   if (!response.ok) throw new Error(`Failed ${response.status}: ${await response.text()}`);
   const result = await response.json();
-  console.log("Build job created!");
+  console.log("Judge/oracle job created!");
   printApiResult(result);
 } else {
-  await postJobDirect(walletClient, publicClient, account, payMethod, "build", DESCRIPTION, { cvAmount });
+  await postJobDirect(walletClient, publicClient, account, payMethod, "judge", CONDITION, { cvAmount });
 }
