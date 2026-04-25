@@ -11,8 +11,8 @@ export const CONTRACT    = "0xb2fb486a9569ad2c97d9c73936b46ef7fdaa413a";
 export const CLAWD_TOKEN = "0x9f86dB9fc6f7c9408e8Fda3Ff8ce4e78ac7a6b07";
 export const USDC_TOKEN  = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 export const WETH        = "0x4200000000000000000000000000000000000006";
-export const QUOTER      = "0x3d4e44Eb1374240CE5F1B136aa68B6a27e59f8e7"; // UniV3 QuoterV2 on Base
-export const RPC         = "https://mainnet.base.org";
+export const QUOTER      = "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"; // UniV3 QuoterV2 on Base
+export const RPC         = `https://base-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_KEY}`;
 
 // Service type IDs as seeded at deploy
 export const SERVICE_IDS = {
@@ -269,10 +269,35 @@ export async function postJobDirect(walletClient, publicClient, account, payMeth
     });
 
   } else if (payMethod === "cv") {
-    const cvAmount = opts.cvAmount;
-    if (!cvAmount) throw new Error("CV payment requires --cv-amount=<n>");
-    console.log(`\nCV amount: ${cvAmount}`);
-    console.log("Posting job with CV...");
+    // 1. Calculate cvAmount from live data (or use manual override)
+    let cvAmount = opts.cvAmount ?? null;
+    if (!cvAmount) {
+      const highestRes = await fetch("https://larv.ai/api/cv/highest");
+      if (!highestRes.ok) throw new Error(`Failed to fetch highest CV: ${highestRes.status}`);
+      const { highestCVBalance } = await highestRes.json();
+      const cvDivisor = Number(svc.cvDivisor);
+      cvAmount = BigInt(Math.ceil((highestCVBalance / 5) / cvDivisor));
+      console.log(`\nHighest CV balance: ${highestCVBalance.toFixed(2)}`);
+      console.log(`CV divisor:         ${cvDivisor}`);
+    }
+    console.log(`CV amount to spend: ${cvAmount}`);
+
+    // 2. Sign the static authorization message (EIP-191 personal sign)
+    const signature = await walletClient.signMessage({ message: "larv.ai CV Spend" });
+
+    // 3. Burn CV off-chain first
+    console.log("Burning CV off-chain...");
+    const spendRes = await fetch("https://leftclaw.services/api/cv-spend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet: account.address, signature, amount: Number(cvAmount) }),
+    });
+    if (!spendRes.ok) throw new Error(`CV spend failed (${spendRes.status}): ${await spendRes.text()}`);
+    const spendResult = await spendRes.json();
+    console.log(`CV burned. New balance: ${spendResult.newBalance ?? "see larv.ai"}`);
+
+    // 4. Post job on-chain
+    console.log("Posting job on-chain with CV...");
     hash = await walletClient.writeContract({
       address: CONTRACT, abi: CONTRACT_ABI,
       functionName: "postJobWithCV",

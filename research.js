@@ -25,9 +25,7 @@ if (payMethod === "x402") {
   });
   if (!response.ok) throw new Error(`Failed ${response.status}: ${await response.text()}`);
   const result = await response.json();
-  console.log(result.jobUrl || result.chatUrl || "No URL returned");
-  if (result.jobId) console.log(`Job ID: ${result.jobId}`);
-  if (result.message) console.log(result.message);
+  printApiResult(result);
 } else {
   await postJobDirect(walletClient, publicClient, account, payMethod, "research", DESCRIPTION, { cvAmount });
 }

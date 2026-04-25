@@ -4,7 +4,7 @@ const allArgs = process.argv.slice(2);
 const args = positionalArgs(allArgs);
 const DESCRIPTION = args[0];
 if (!DESCRIPTION) {
-  console.error('Usage: node build "<what to build>" [--pay=x402|usdc|eth|clawd|cv] [--cv-amount=<n>]');
+  console.error('Usage: node build "<what to build>" [--pay=x402|usdc|eth|clawd|cv]');
   console.error('  e.g. node build "Simple ERC20 token with mint/burn, deploy to Base"');
   process.exit(1);
 }
